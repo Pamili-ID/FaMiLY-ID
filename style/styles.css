@@ -506,6 +506,8 @@ body {
   flex-direction: column;
   overflow: hidden;
   z-index: 99;
+  margin-right: 6vh;
+  scale: 1;
 }
 
 .profile-menu button {
