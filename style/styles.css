@@ -152,7 +152,7 @@ body {
 .fab-post {
   --fab-color: 59,130,246; /* ← WARNA UTAMA (BIRU) */
   --fab-size: 22px;        /* ← UKURAN ICON */
-
+  margin-right: 6vh;
   position: fixed;
   right: 70px;
   bottom: 70px;
@@ -446,6 +446,7 @@ body {
 ===================================================== */
 .side-section {
   background: rgba(255,255,255,0.85);
+  margin-top: 10px;
   border-radius: 16px;
   padding: 16px;
   display: flex;
@@ -454,17 +455,37 @@ body {
 }
 
 .auto-scroll {
-  height: 120px;
+  height: 300px;
   overflow: hidden;
 }
 
 .scroll-content {
+  display: flex;
+  flex-direction: column;
   animation: scroll 10s linear infinite;
+}
+
+.auto-scroll .card {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+  width: 100%;
+  height: 150px; /* atur sesuai kebutuhan */
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.auto-scroll .card img {
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* supaya tidak gepeng */
+  display: block;
 }
 
 @keyframes scroll {
   from { transform: translateY(0); }
-  to   { transform: translateY(-100%); }
+  to   { transform: translateY(-50%); }
 }
 
 .friend {
@@ -1009,25 +1030,31 @@ body {
   transform: translateY(-1px);
 }
 
+.post-menu {
+  position: relative;
+}
+
 .menu-dropdown {
   position: absolute;
   right: 0;
-  top: 28px;
-  background: white;
+  top: 30px;
+  background: #fff;
   border-radius: 10px;
   box-shadow: 0 8px 20px rgba(0,0,0,.15);
-  display: none;
-  overflow: hidden;
-  z-index: 50;
   min-width: 180px;
+  overflow: hidden;
+  z-index: 999;
+
   opacity: 0;
-  transform: translateY(-6px) scale(0.98);
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transform: translateY(-5px);
+  pointer-events: none;
+  transition: all 0.2s ease;
 }
 
-.menu-dropdown.is-open {
+.menu-dropdown.show {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .menu-dropdown button {
@@ -1043,19 +1070,14 @@ body {
   font-size: 13px;
 }
 
-.menu-dropdown button .menu-ico {
-  width: 18px;
-  text-align: center;
-}
-
 .menu-dropdown button.danger {
   color: #d94444;
 }
 
 .menu-dropdown button:hover {
   background: #f3f5ff;
-  color: #ff4d4d;
 }
+
 
 .load-more {
   display: block;
@@ -1955,4 +1977,5 @@ body {
   cursor: pointer;
   transition: 0.2s ease;
 }
+
 

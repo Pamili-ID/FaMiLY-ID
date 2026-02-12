@@ -54,6 +54,9 @@ const pageParams = new URLSearchParams(location.search);
 let communityView = "list";
 let followSet = new Set();
 let followSetReady = false;
+let warkopOrder = [];
+
+
 
 /* ================= ELEMENT SELECTORS ================= */
 // Main containers
@@ -99,7 +102,7 @@ const imageModalImg = document.getElementById("imageModalImg");
 /* ================= AUTH & USER PRESENCE ================= */
 onAuthStateChanged(auth, user => {
   if (!user) {
-    location.href = "login_register.html";
+    location.href = "../frontend/login_register.html";
     return;
   }
 
@@ -161,7 +164,7 @@ logoutBtn.onclick = async () => {
 document.getElementById("myProfileBtn").onclick = () => {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
-  location.href = `profile.html?uid=${uid}`;
+  location.href = `frontend/profile.html?uid=${uid}`;
 };
 
 /* ================= POST MODAL & IMAGE PREVIEW ================= */
@@ -257,18 +260,26 @@ submitPost.onclick = async () => {
 /* ================= POSTS MANAGEMENT ================= */
 onChildAdded(ref(db, "posts"), snap => {
   allPosts.unshift({ id: snap.key, ...snap.val() });
+
   renderCurrentTab();
-  if (!postsFirstLoad) {
-    postsFirstLoad = true;
-  }
+
+  if (!postsFirstLoad) postsFirstLoad = true;
+
+  warkopOrder = [];
+
 });
+
+
 
 onChildChanged(ref(db, "posts"), snap => {
   const idx = allPosts.findIndex(p => p.id === snap.key);
   if (idx === -1) return;
+
   allPosts[idx] = { id: snap.key, ...snap.val() };
-  renderCurrentTab();
+
+  updateSinglePost(snap.key);
 });
+
 
 function renderCurrentTab() {
   if (activeTab === "warkop") {
@@ -311,6 +322,9 @@ function renderPosts(list) {
 
     const post = document.createElement("div");
     post.className = "post";
+    post.setAttribute("data-id", p.id);
+
+
 
     const isMine = p.uid === auth.currentUser?.uid;
 
@@ -393,10 +407,32 @@ function renderPosts(list) {
   }
 }
 
+function updateSinglePost(postId) {
+  const postData = allPosts.find(p => p.id === postId);
+  if (!postData) return;
+
+  const postEl = document.querySelector(`.post[data-id="${postId}"]`);
+  if (!postEl) return;
+
+  const liked = postData.likes && postData.likes[auth.currentUser?.uid];
+  const likeCount = postData.likes ? Object.keys(postData.likes).length : 0;
+  const commentCount = postData.comments ? Object.keys(postData.comments).length : 0;
+
+  const likeBtn = postEl.querySelector(".like-btn");
+  const likeCountEl = postEl.querySelector(".like-btn .count");
+  const commentCountEl = postEl.querySelector(".comment-btn .count");
+
+  if (likeBtn) likeBtn.classList.toggle("active", liked);
+  if (likeCountEl) likeCountEl.textContent = likeCount;
+  if (commentCountEl) commentCountEl.textContent = commentCount;
+}
+
+
+
 /* ================= POST INTERACTIONS ================= */
 window.goProfile = uid => {
   if (!uid) return;
-  location.href = `profile.html?uid=${uid}`;
+  location.href = `../frontend/profile.html?uid=${uid}`;
 };
 
 window.like = id => {
@@ -413,7 +449,7 @@ window.like = id => {
 
   if (!snap.exists()) return;
 
-  // 🔒 pastikan hanya pemilik post
+  // 🔒 
   if (snap.val().uid !== user.uid) {
     alert("Kamu tidak punya izin menghapus postingan ini");
     return;
@@ -918,41 +954,55 @@ function getTrendingIds(posts) {
 
 function renderWarkop() {
   if (!feed) return;
+
   if (!allPosts.length) {
     renderFeedLoader("Memuat Warkop...");
     return;
   }
+
+  // Kalau belum ada urutan random, buat sekali
+  if (!warkopOrder.length) {
+    warkopOrder = [...allPosts]
+      .sort(() => Math.random() - 0.5)
+      .map(p => p.id);
+  }
+
   const trendingIds = getTrendingIds(allPosts);
-  const shuffled = [...allPosts]
-    .map(p => ({ ...p, _isTrending: trendingIds.has(p.id) }))
-    .sort(() => Math.random() - 0.5);
-  renderPosts(shuffled);
+
+  const orderedPosts = warkopOrder
+    .map(id => allPosts.find(p => p.id === id))
+    .filter(Boolean)
+    .map(p => ({ ...p, _isTrending: trendingIds.has(p.id) }));
+
+  renderPosts(orderedPosts);
 }
 
-async function renderFollowing() {
+function renderFollowing() {
   if (!feed) return;
+
   if (!allPosts.length) {
     renderFeedLoader("Memuat Diikuti...");
     return;
   }
+
   const myUid = auth.currentUser?.uid;
   if (!myUid) return;
 
-  if (!followSetReady) {
-    renderFeedLoader("Memuat Diikuti...");
-  }
-
   const trendingIds = getTrendingIds(allPosts);
+
   const filtered = allPosts
     .filter(p => followSet.has(p.uid))
+    .sort((a, b) => b.time - a.time) // terbaru di atas
     .map(p => ({ ...p, _isTrending: trendingIds.has(p.id) }));
 
   if (!filtered.length) {
     feed.innerHTML = "<p>Belum ada postingan dari yang diikuti.</p>";
     return;
   }
+
   renderPosts(filtered);
 }
+
 
 function watchFollowSet(myUid) {
   if (!myUid) return;
@@ -2229,46 +2279,26 @@ function showToast(message) {
   }, 2000);
 }
 
-/* ================= POST COUNT (for profile) ================= */
-async function countProfilePosts(uid) {
-  const snap = await get(ref(db, "posts"));
-  let count = 0;
-  snap.forEach(p => {
-    if (p.val().uid === uid) count++;
-  });
-  return count;
-}
-
-const params = new URLSearchParams(location.search);
-const profileUid = params.get("uid");
-
-if (profileUid) {
-  countProfilePosts(profileUid).then(total => {
-    const postCountEl = document.getElementById("postCount");
-    if (postCountEl) postCountEl.textContent = total;
-  });
-}
-window.togglePostMenu = id => {
-  document.querySelectorAll(".menu-dropdown").forEach(m => {
-    if (m.id !== "menu-" + id) {
-      m.classList.remove("is-open");
-      m.style.display = "none";
-    }
-  });
-
+/* ================= TOGGLE POST MENU ================= */
+window.togglePostMenu = function (id) {
   const menu = document.getElementById("menu-" + id);
-  if (menu) {
-    const willOpen = menu.style.display !== "block";
-    menu.style.display = willOpen ? "block" : "none";
-    if (willOpen) {
-      requestAnimationFrame(() => menu.classList.add("is-open"));
-    } else {
-      menu.classList.remove("is-open");
-    }
+  if (!menu) return;
+
+  const isOpen = menu.classList.contains("show");
+
+  // Tutup semua menu dulu
+  document.querySelectorAll(".menu-dropdown").forEach(m => {
+    m.classList.remove("show");
+  });
+
+  // Kalau sebelumnya belum terbuka, buka
+  if (!isOpen) {
+    menu.classList.add("show");
   }
 };
 
-window.deletePost = async id => {
+/* ================= DELETE POST ================= */
+window.deletePost = async function (id) {
   const user = auth.currentUser;
   if (!user) return;
 
@@ -2279,7 +2309,7 @@ window.deletePost = async id => {
 
   const post = snap.val();
 
-  // keamanan: pastikan pemilik
+  // keamanan
   if (post.uid !== user.uid) {
     alert("Tidak punya izin menghapus postingan ini");
     return;
@@ -2289,46 +2319,16 @@ window.deletePost = async id => {
 
   await remove(postRef);
 
-  // update UI lokal
+  // Update UI
   allPosts = allPosts.filter(p => p.id !== id);
   renderPosts(allPosts);
 };
 
-window.togglePostMenu = id => {
-  document.querySelectorAll(".menu-dropdown").forEach(m => {
-    if (m.id !== "menu-" + id) m.style.display = "none";
-  });
-
-  const menu = document.getElementById("menu-" + id);
-  if (menu) {
-    menu.style.display = menu.style.display === "block" ? "none" : "block";
+/* ================= CLOSE MENU IF CLICK OUTSIDE ================= */
+document.addEventListener("click", function (e) {
+  if (!e.target.closest(".post-menu")) {
+    document.querySelectorAll(".menu-dropdown").forEach(m => {
+      m.classList.remove("show");
+    });
   }
-};
-
-window.deletePost = async id => {
-  const user = auth.currentUser;
-  if (!user) return;
-
-  const postRef = ref(db, "posts/" + id);
-  const snap = await get(postRef);
-
-  if (!snap.exists()) return;
-
-  const post = snap.val();
-
-  // keamanan: pastikan pemilik
-  if (post.uid !== user.uid) {
-    alert("Tidak punya izin menghapus postingan ini");
-    return;
-  }
-
-  if (!confirm("Yakin ingin menghapus postingan ini?")) return;
-
-  await remove(postRef);
-
-  // update UI lokal
-  allPosts = allPosts.filter(p => p.id !== id);
-  renderPosts(allPosts);
-};
-
-
+});

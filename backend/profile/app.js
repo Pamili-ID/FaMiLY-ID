@@ -46,53 +46,47 @@ const params = new URLSearchParams(location.search);
 const profileUid = params.get("uid");
 
 /* ================= AUTH ================= */
-onAuthStateChanged(auth, async user => {
+onAuthStateChanged(auth, async (user) => {
   if (!user) {
     location.href = "login_register.html";
     return;
   }
 
   myUid = user.uid;
-  viewedUid = profileUid || myUid;
+
+  const params = new URLSearchParams(location.search);
+  viewedUid = params.get("uid") || myUid;
   isMyProfile = viewedUid === myUid;
 
-  /* ===== MENU VISIBILITY ===== */
-  if (!isMyProfile) {
-    if (btnSettings) btnSettings.style.display = "none";
-    if (btnAddPost) btnAddPost.style.display = "none";
-    if (followBtn) {
-      followBtn.style.display = "inline-flex";
-      followBtn.onclick = () => toggleFollow(viewedUid);
-    }
-  } else {
-    if (followBtn) followBtn.style.display = "none";
+  console.log("My UID:", myUid);
+  console.log("Viewed UID:", viewedUid);
+
+  try {
+    await loadUserProfile(viewedUid);
+    initFollowSystem();
+  } catch (err) {
+    console.error("Gagal load profile:", err);
+  }
+});
+
+async function loadUserProfile(uid) {
+
+  const snap = await get(ref(db, `users/${uid}`));
+
+  if (!snap.exists()) {
+    console.warn("User tidak ditemukan:", uid);
+    return;
   }
 
-  /* ===== LOAD USER DATA ===== */
-  const userSnap = await get(ref(db, `users/${viewedUid}`));
-  if (!userSnap.exists()) return;
-
-  const u = userSnap.val();
-
-  if (!("bio" in u)) {
-    await update(ref(db, `users/${viewedUid}`), { bio: "Belum ada bio" });
-    u.bio = "Belum ada bio";
-  }
+  const u = snap.val();
 
   proAvatar.src = u.avatar || "default-avatar.png";
   proUsername.textContent = u.username || "Pengguna";
   proNickname.textContent = "@" + (u.nickname || "user");
-  proBio.textContent = u.bio;
+  proBio.textContent = u.bio || "Belum ada bio";
 
-  /* ===== COUNTS ===== */
-  await loadCounts(viewedUid);
-
-  /* ===== DEFAULT VIEW ===== */
-  loadPostings(viewedUid);
-  loadFriendList(viewedUid);
-
-  if (!isMyProfile) updateFollowButton(viewedUid);
-});
+  await loadCounts(uid);
+}
 
 async function getPostsByUid(uid) {
   try {
@@ -592,65 +586,104 @@ async function loadMedia(uid) {
   profileSection.appendChild(wrap);
 }
 
+/* ================= SIMPLE FOLLOW SYSTEM ================= */
+
+function initFollowRealtime(uid) {
+  const followRef = ref(db, `follows/${myUid}/${uid}`);
+
+  onValue(followRef, (snap) => {
+    followBtn.className = "btn-add";
+
+    if (snap.exists()) {
+      followBtn.textContent = "Unfollow";
+      followBtn.classList.add("danger");
+    } else {
+      followBtn.textContent = "Follow";
+      followBtn.classList.add("primary");
+    }
+  });
+}
+
+
 async function toggleFollow(targetUid) {
-  if (targetUid === myUid) return;
+  if (!myUid || !targetUid || myUid === targetUid) return;
 
-  // 🔒 lock button
-  if (followBtn) {
-    followBtn.disabled = true;
-    followBtn.style.opacity = "0.6";
+  const followRef = ref(db, `follows/${myUid}/${targetUid}`);
+  const snap = await get(followRef);
+
+  if (snap.exists()) {
+    // ===== UNFOLLOW =====
+    await remove(followRef);
+  } else {
+    // ===== FOLLOW =====
+    await set(followRef, true);
   }
 
-  const myFriendRef = ref(db, `friends/${myUid}/${targetUid}`);
-  const targetFriendRef = ref(db, `friends/${targetUid}/${myUid}`);
-  const requestRef = ref(db, `friend_requests/${targetUid}/${myUid}`);
+  // refresh tombol setelah aksi
+  updateFollowButton(targetUid);
+}
 
-  const friendSnap = await get(myFriendRef);
-  const requestSnap = await get(requestRef);
 
-  if (friendSnap.exists()) {
-    // ===== UNFRIEND =====
-    await remove(myFriendRef);
-    await remove(targetFriendRef);
-  } 
-  else if (requestSnap.exists()) {
-    // ===== CANCEL REQUEST =====
-    await remove(requestRef);
-  } 
-  else {
-    // ===== SEND REQUEST =====
-    await set(requestRef, true);
-  }
+async function updateFollowButton(uid) {
+  if (!followBtn) return;
 
-  // 🔁 REFRESH UI
-  await updateFollowButton(targetUid);
-  await loadCounts(targetUid);
-  await loadFriendList(targetUid);
+  const snap = await get(ref(db, `follows/${myUid}/${uid}`));
 
-  // 🔓 unlock button
-  if (followBtn) {
-    followBtn.disabled = false;
-    followBtn.style.opacity = "1";
+  followBtn.className = "btn-add"; // reset class
+
+  if (snap.exists()) {
+    followBtn.textContent = "Unfollow";
+    followBtn.classList.add("danger");
+  } else {
+    followBtn.textContent = "Follow";
+    followBtn.classList.add("primary");
   }
 }
 
-async function updateFollowButton(uid) {
-  const friendSnap = await get(ref(db, `friends/${myUid}/${uid}`));
-  const requestSnap = await get(ref(db, `friend_requests/${uid}/${myUid}`));
+
+function initFollowCountRealtime(uid) {
+
+  const followersRef = ref(db, "follows");
+  const followingRef = ref(db, `follows/${uid}`);
+
+  // FOLLOWING
+  onValue(followingRef, snap => {
+    const count = snap.exists() ? Object.keys(snap.val()).length : 0;
+    followingCount.textContent = count;
+  });
+
+  // FOLLOWERS
+  onValue(followersRef, snap => {
+    if (!snap.exists()) {
+      followerCount.textContent = 0;
+      return;
+    }
+
+    let total = 0;
+
+    snap.forEach(userSnap => {
+      if (userSnap.child(uid).exists()) total++;
+    });
+
+    followerCount.textContent = total;
+  });
+}
+
+function initFollowSystem() {
 
   if (!followBtn) return;
-  followBtn.className = "btn-add"; // reset class
 
-  if (friendSnap.exists()) {
-    followBtn.textContent = "❌ Unfriend";
-    followBtn.classList.add("danger");
-  } 
-  else if (requestSnap.exists()) {
-    followBtn.textContent = "⏳ Requested";
-    followBtn.classList.add("disabled");
-  } 
-  else {
-    followBtn.textContent = "➕ Follow";
-    followBtn.classList.add("primary");
+  if (!isMyProfile) {
+
+    followBtn.style.display = "inline-flex";
+    followBtn.onclick = () => toggleFollow(viewedUid);
+
+    updateFollowButton(viewedUid);
+    initFollowRealtime(viewedUid);
+    initFollowCountRealtime(viewedUid);
+
+  } else {
+    followBtn.style.display = "none";
+    initFollowCountRealtime(myUid);
   }
 }
